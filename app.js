@@ -10,6 +10,7 @@ const mongoose = require("mongoose");
 dotEnv.config({ path: "./config.env" });
 const app = express();
 const Image = require("./models/lotteryModel");
+const { prototype } = require("events");
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set("view engine", "ejs");
@@ -37,18 +38,18 @@ cloudinary.config({
 //   ],
 // });
 // console.log(url);
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "./public/images/uploads/");
-  },
-  filename: function (req, file, cb) {
-    console.log(file.fieldname);
-    crypto.randomBytes(12, (err, bytes) => {
-      const fn = bytes.toString("hex") + path.extname(file.originalname);
-      cb(null, fn);
-    });
-  },
-});
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     cb(null, "./public/images/uploads/");
+//   },
+//   filename: function (req, file, cb) {
+//     console.log(file.fieldname);
+//     crypto.randomBytes(12, (err, bytes) => {
+//       const fn = bytes.toString("hex") + path.extname(file.originalname);
+//       cb(null, fn);
+//     });
+//   },
+// });
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
@@ -59,7 +60,10 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ storage, fileFilter });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+});
 const db = process.env.DATABASE_URL.replace(
   "<PASSWORD>",
   process.env.DATABASE_PASSWORD,
@@ -140,32 +144,40 @@ app.get("/adminfuckoffjj", (req, res) => {
 });
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
-    const slot = req.body.slot; // afternoon / night
+    const slot = req.body.slot;
     const file = req.file;
 
     if (!file) {
-      return res.status(400).json({
-        status: "fail",
-        message: "No image uploaded ❌"
-      });
+      return res.status(400).send("No image uploaded");
     }
 
-    // ✅ Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(file.path, {
-      folder: "lottery",
-      transformation:[{
-        width: 757,
-        height: 1024,
-        crop: "fill",
-        quality:"auto",
-        fetch_format:"auto",
-        
-      }] // optional folder name
+    if (!["afternoon", "night"].includes(slot)) {
+      return res.status(400).send("Invalid slot");
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "lottery",
+          transformation: [
+            {
+              width: 757,
+              height: 1024,
+              crop: "fill",
+              quality: "auto",
+              fetch_format: "auto",
+            },
+          ],
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+
+      stream.end(file.buffer);
     });
 
-    console.log("Cloudinary:", result);
-
-    // ✅ Save URL in DB
     await Image.findOneAndUpdate(
       {},
       {
@@ -177,25 +189,71 @@ app.post("/upload", upload.single("image"), async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // ✅ Delete local file (IMPORTANT)
-    fs.unlinkSync(file.path);
-
     res.redirect("/");
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({
-      status: "error",
-      message: "Upload failed ❌"
-    });
+    console.log("UPLOAD ERROR:", err);
+    res.status(500).send("Upload failed");
   }
 });
+
+    // ✅ Upload to Cloudinary
+// const result = await new Promise((resolve, reject) => {
+//   const stream = cloudinary.uploader.upload_stream(
+//     {
+//       folder: "lottery",
+//       transformation: [
+//         {
+//           width: 757,
+//           height: 1024,
+//           crop: "fill",
+//           quality: "auto",
+//           fetch_format: "auto",
+//         },
+//       ],
+//     },
+//     (error, result) => {
+//       if (error) reject(error);
+//       else resolve(result);
+//     }
+//   );
+
+//   stream.end(file.buffer);
+// });
+
+
+
+    // ✅ Save URL in DB
+//     await Image.findOneAndUpdate(
+//       {},
+//       {
+//         $set: {
+//           [`slots.${slot}.imageUrl`]: result.secure_url,
+//           [`slots.${slot}.publicId`]: result.public_id,
+//         },
+//       },
+//       { upsert: true, new: true }
+//     );
+
+//     // ✅ Delete local file (IMPORTANT)
+    
+
+//     res.redirect("/");
+
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).json({
+//       status: "error",
+//       message: "Upload failed ❌"
+//     });
+//   }
+// });
 // app.post(`/file/:filename`, function (req, res) {
 //   console.log(req.params.filename);
 //   res.send(req.params.filename);
 // });
-
-app.listen(3000, () => {
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
   console.log("Server started on http://localhost:3000");
 });
 
