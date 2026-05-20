@@ -120,7 +120,9 @@ app.get("/", async (req, res) => {
 
     res.render("index", {
       afternoonImg: data?.slots?.afternoon?.imageUrl || "https://via.placeholder.com/757x1024?text=No+Image",
-      nightImg: data?.slots?.night?.imageUrl || "https://via.placeholder.com/757x1024?text=No+Image"
+      nightImg: data?.slots?.night?.imageUrl || "https://via.placeholder.com/757x1024?text=No+Image",
+      date: new Date().toLocaleDateString("en-US", {
+      })
     });
 
   } catch (err) {
